@@ -1,0 +1,3 @@
+function sendDanmaku(content) {
+
+}

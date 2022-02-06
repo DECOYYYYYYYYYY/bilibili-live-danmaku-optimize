@@ -1,0 +1,62 @@
+.chen-dm-box {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  z-index: 99;
+  pointer-events: none;
+}
+
+.chen-danmaku-merge-3 {
+  color: #54eed8!important;
+}
+
+.chen-danmaku-merge-8 {
+  color: #fff522!important;
+}
+
+.chen-danmaku-merge-15 {
+  color: #e33fff!important;
+}
+
+.chen-danmaku-merge-30 {
+  color: #ff6868!important;
+}
+
+.chen-danmaku {
+  --lineHeight: 1.15;
+  position: absolute;
+  white-space: pre;
+  overflow: hidden;
+  left: 100%;
+  top: var(--top, 0px);
+  animation: chen-danmaku-roll var(--duration, 10s) linear;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  pointer-events: none;
+  display: inline-block;
+  will-change: transform;
+  font-family: SimHei, 'Microsoft JhengHei', Arial, Helvetica, sans-serif;
+  font-weight: var(--weight, bold);
+  line-height: var(--lineHeight);
+  border-radius: calc(var(--size, 25px) * var(--lineHeight) * 0.5);
+  padding: 0 calc(var(--size, 25px) * 0.4);
+  font-size: var(--size, 25px);
+  color: var(--color, #fff);
+  transition: color .3s linear ,background-color .3s linear;
+  opacity: var(--opacity, 1);
+  text-shadow: 1px 0 1px var(--shadowColor, #000000), 0 1px 1px var(--shadowColor, #000000), 0 -1px 1px var(--shadowColor, #000000), -1px 0 1px var(--shadowColor, #000000);
+}
+
+@keyframes chen-danmaku-roll {
+  from {
+    left: 100%;
+    transform: translateX(0);
+  }
+  to {
+    left: -20px;
+    transform: translateX(-100%);
+  }
+}

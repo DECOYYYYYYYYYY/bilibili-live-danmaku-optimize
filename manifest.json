@@ -1,0 +1,43 @@
+{
+  "manifest_version": 2,
+  "name": "bilibili-live-danmaku-optimize",
+  "author": "Chen",
+  "version": "1.0.0",
+  "description": "哔哩哔哩直播合并重复弹幕",
+  "icons":
+  {
+    "16": "img/icon.png",
+    "48": "img/icon.png",
+    "128": "img/icon.png"
+  },
+  "browser_action":
+  {
+    "default_icon": "img/icon.png",
+    "default_title": "哔哩哔哩直播弹幕优化",
+    "default_popup": "popup.html"
+  },
+  "background":
+  {
+    "scripts": ["js/background.js"],
+    "persistent":false
+  },
+  "content_scripts":
+  [
+    {
+      "js": ["js/jquery-1.12.3.js", "js/functions.js", "js/content-script.js"],
+      "matches": ["https://live.bilibili.com/*"],
+      "css": ["css/custom.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "permissions":
+  [
+    "activeTab",
+    "declarativeContent",
+    "storage",
+    "tabs",
+    "*://*/*",
+    "http://*/*",
+    "https://*/*"
+  ]
+}
