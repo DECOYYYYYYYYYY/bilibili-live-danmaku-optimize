@@ -1,27 +1,35 @@
 (function () {
   console.log('弹幕优化插件启动')
   const $box = $('<div class="chen-dm-box"></div>')
-  //todo 合并弹幕
+  const $tempBox = $('<div class="chen-temp-box"></div>')
   const liveDanmakus = new Map() // key: featureCode ,value: {element: $div, originalMsg: msg, repeatCount: 1}
   const danmakuStyleInfo = {'size': '27px', 'color': '#fff', 'opacity': '0.4'}
   const danmakuUsingTop = []
+  const danmakuQueue = []
   let speed = 100
 
+  //todo 重构为类
   function handleDanmaku(msg) {
     let feature = getFeatureString(msg)
-    const item = liveDanmakus.get(feature)
-    if (item) {
-      item.repeatCount++
-      item.element.text(`${item.originalMsg}₍${turnNumberToSubscript(item.repeatCount)}₎`)
-      setDanmakuStyleAfterMerge(item)
-      liveDanmakus.set(feature, item)
-      saveMergeHistory()
-    } else {
-      sendDanmaku(msg, feature)
-    }
+    addDanmakuToQueue()
 
+    function mergeWhenRepeat(feature) {
+      const item = liveDanmakus.get(feature)
+      if (item) {
+        item.repeatCount++
+        item.element.text(`${item.originalMsg}₍${turnNumberToSubscript(item.repeatCount)}₎`)
+        setDanmakuStyleAfterMerge(item)
+        liveDanmakus.set(feature, item)
+        saveMergeHistory(item)
+        return true
+      } else {
+        return false
+      }
+    }
+    //todo 去除结尾/r符号
     function getFeatureString(msg) {
       msg = exchangeCharsFromZhToEn(msg)
+      msg = handleRepeatString(msg)
       msg = trimPunctuation(msg)
       msg = handleRepeatString(msg)
       return msg
@@ -104,7 +112,7 @@
       return arr.join('')
     }
 
-    function saveMergeHistory(){
+    function saveMergeHistory(item){
       chrome.storage.local.get(['mergeHistory'], (result) => {
         let value = result.mergeHistory
         // let value = undefined
@@ -120,56 +128,69 @@
       })
     }
 
-    // function saveMergeHistory() {
-    //   let value = [18, 29]
-    //   chrome.storage.local.set({key: value}, function() {
-    //     // console.log('Value is set to ' + value);
-    //   });
-    //
-    //   chrome.storage.local.get(['key'], function(result) {
-    //     value = result.key
-    //   });
-    //   value.push(33)
-    //   chrome.storage.local.set({key: value}, function() {
-    //     // console.log('Value is set to ' + value);
-    //   });
-    //
-    //   chrome.storage.local.get(['key'], function(result) {
-    //     console.log('Value currently is ' + result.key.length);
-    //   });
-    // }
-
-    function sendDanmaku(msg, feature) {
+    function addDanmakuToQueue() {
       let $div = $(`<div class="chen-danmaku">${msg}</div>`)
-      liveDanmakus.set(feature, {element: $div, originalMsg: msg, repeatCount: 1, addedClass: []})
-      $div.appendTo($box)
-      let top = 0
-      let InsertIndex = 0
       $div.attr("style", `--size:${danmakuStyleInfo.size};`)
-      let height = $div.height()
-      let duration = ($box.width() + $div.width()) / speed
+      danmakuQueue.push({element: $div, timeStamp: Date.now(), feature: feature})
+      sendDanmakuFromQueue()
+    }
 
+    function sendDanmakuFromQueue() {
+      console.log(liveDanmakus)
+      let item = danmakuQueue[0]
+      if (!item) {
+        return
+      }
+
+      let $div = item.element
+      let timeStamp = item.timeStamp
+      if ((Date.now() - timeStamp > 10000) || mergeWhenRepeat(item.feature)) {
+        danmakuQueue.shift()
+        sendDanmakuFromQueue()
+        return
+      }
+      $div.appendTo($tempBox)
+      let height = $div.height()
+      let width = $div.width()
+      $tempBox.empty()
+      console.log(danmakuQueue.length)
+
+      let top = 0
+      let InsertTopIndex = 0
+
+      // todo 性能优化 当$box尺寸变化时更新danmakuUsingTop，平时不需要重新计算
       for (let i = 0; i < danmakuUsingTop.length; i++) {
         if (top <= danmakuUsingTop[i] && danmakuUsingTop[i] < top + height) {
           top += height
-          InsertIndex = i + 1
+          InsertTopIndex = i + 1
         } else if (top + height <= danmakuUsingTop[i]) {
           break
         }
       }
-      danmakuUsingTop.splice(InsertIndex, 0, top)
+      if (top + height > $box.height()) {
+        return
+      }
+      danmakuQueue.shift()
+      let duration = ($box.width() + width) / speed
+      danmakuUsingTop.splice(InsertTopIndex, 0, top)
       setTimeout(() => {
         danmakuUsingTop.splice(danmakuUsingTop.indexOf(top), 1)
-      }, ($div.width() + 30) / speed * 1000)
-      setTimeout(() => {
-        liveDanmakus.delete(feature)
-        $div.remove()
-      }, duration * 1000)
+        sendDanmakuFromQueue()
+      }, (width + 30) / speed * 1000)
+
+
 
       // 可选
       // --weight: bold;
       // --shadowColor: #000000;
       $div.attr("style", `--size:${danmakuStyleInfo.size};--color:${danmakuStyleInfo.color};--opacity:${danmakuStyleInfo.opacity};--top:${top}px;--duration:${duration}s;`)
+      //fixme 有大量弹幕缓存时，liveDanmakus更新不同步，导致无法合并，恶性循环
+      liveDanmakus.set(feature, {element: $div, originalMsg: msg, repeatCount: 1, addedClass: []})
+      $div.appendTo($box)
+      setTimeout(() => {
+        liveDanmakus.delete(feature)
+        $div.remove()
+      }, duration * 1000)
     }
 
     function setDanmakuStyleAfterMerge(item) {
@@ -191,28 +212,37 @@
 
   function mount() {
     $box.prependTo('#live-player')
+    $tempBox.prependTo('#live-player')
     $('#chat-items').on('DOMNodeInserted', (e) => {
       let msg = e.target.dataset.danmaku
       if (msg) handleDanmaku(msg)
     })
 
     // test
-    setInterval(() => {
-      handleDanmaku('？嘉然')
+    // setInterval(() => {
+    //   handleDanmaku('？嘉然')
+    //   // console.log(liveDanmakus)
+    // }, 1000)
+    // setInterval(() => {
+    //   handleDanmaku('赢')
+    //   // console.log(liveDanmakus)
+    // }, 500)
+    // setInterval(() => {
+    //   handleDanmaku('赢！！！')
       // console.log(liveDanmakus)
-    }, 1000)
-    setInterval(() => {
-      handleDanmaku('赢')
-      // console.log(liveDanmakus)
-    }, 500)
-    setInterval(() => {
-      handleDanmaku('赢！！！')
-      // console.log(liveDanmakus)
-    }, 400)
-    setInterval(() => {
-      handleDanmaku('嘉然？')
-      // console.log(liveDanmakus)
-    }, 700)
+    // }, 20)
+    // setInterval(() => {
+    //   handleDanmaku('嘉然？')
+    //   // console.log(liveDanmakus)
+    // }, 700)
+
+    let $button = $('<button id="chen-getMergeHistory">点我点我</button>')
+    $button.click(() => {
+      getMergeHistory().then((value) => {
+        console.log(value)
+      })
+    })
+    $button.prependTo('body')
   }
 
   async function getMergeHistory(){
