@@ -24,7 +24,7 @@
   "content_scripts":
   [
     {
-      "js": ["js/jquery-1.12.3.js", "js/functions.js", "js/content-script.js"],
+      "js": ["js/jquery-1.12.3.js", "js/core.js"],
       "matches": ["https://live.bilibili.com/*"],
       "css": ["css/custom.css"],
       "run_at": "document_end"
