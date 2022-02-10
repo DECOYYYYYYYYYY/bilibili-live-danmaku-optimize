@@ -10,9 +10,8 @@
 
     return metrics.width;
   }
-  String.prototype.exchangeCharsFromZhToEn = function () {
-    let s = this
-    let map = new Map([
+  String.prototype.exchangeCharsFromZhToEn = (function () {
+    const map = new Map([
       ['：', ':'],
       ['。', '.'],
       ['“', '"'],
@@ -40,25 +39,28 @@
       ['—', '-'],
       ['·', '.'],
     ])
-    s = s.split("");
-    for (let i = 0; i < s.length; i++) {
-      let temp = map.get(s[i])
-      if (temp) {
-        s[i] = temp
+    return function () {
+      let s = this
+      s = s.split("");
+      for (let i = 0; i < s.length; i++) {
+        let temp = map.get(s[i])
+        if (temp) {
+          s[i] = temp
+        }
+        //全角空格处理
+        else if (s[i].charCodeAt(0) === 12288) {
+          s[i] = String.fromCharCode(32);
+        }
+        /*其他全角*/
+        else if (s[i].charCodeAt(0) > 0xFF00 && s[i].charCodeAt(0) < 0xFFEF) {
+          s[i] = String.fromCharCode(s[i].charCodeAt(0) - 65248);
+        }
       }
-      //全角空格处理
-      else if (s[i].charCodeAt(0) === 12288) {
-        s[i] = String.fromCharCode(32);
-      }
-      /*其他全角*/
-      else if (s[i].charCodeAt(0) > 0xFF00 && s[i].charCodeAt(0) < 0xFFEF) {
-        s[i] = String.fromCharCode(s[i].charCodeAt(0) - 65248);
-      }
+      return s.join("");
     }
-    return s.join("");
-  }
+  })()
   String.prototype.trimUnusefulChars = (function () {
-    let unusefulChars = new Set(["?", "!", ".", "\r"])
+    const unusefulChars = new Set(["?", "!", ".", "\r"])
     return function () {
       let s = this
       let i = 0
@@ -81,33 +83,33 @@
   class Danmaku {
     static globalStyle = {size: 27, color: '#fff', opacity: 0.4, speed: 100}
     static lineHeight = Danmaku.globalStyle.size * 1.2
-    static mergeStyle = new Map([
+    static mergeStyle = [
       [3, 'chen-danmaku-merge-3'],
       [8, 'chen-danmaku-merge-8'],
       [15, 'chen-danmaku-merge-15'],
       [30, 'chen-danmaku-merge-30'],
-    ])
+    ]
 
     constructor(msg) {
       this.msg = msg
       this.feature = this.getFeatureString(msg).toString()
-      // this.feature = Math.random()
+      // this.feature = msg==='合并' ? '合并' : Math.random()
       this.repeatCount = 1
       this.el = null
       this.addedClass = ''
       this.width = 0
       this.createTime = Date.now()
+      this.sendedTime = 0
+      this.top = 0
+      this.duration = 0
     }
 
-    mount(boxElement, boxWidth, top) {
-      const {size, color, opacity, speed} = Danmaku.globalStyle
-      this.width = this.msg.pxWidth(`${size}px SimHei`)
-      const duration = (boxWidth + this.width) / speed
+    mount(boxElement, top) {
+      this.top = top
+      this.sendedTime = Date.now()
       this.el = $(`<div class="chen-danmaku">${this.msg}</div>`)
-      this.el.attr("style",
-        `--size:${size}px;--color:${color};--opacity:${opacity};--top:${top}px;--duration:${duration}s;`)
+      this.generateRollStyle()
       this.el.appendTo(boxElement)
-      return duration
     }
 
     getFeatureString(msg) {
@@ -116,40 +118,49 @@
     }
 
     updateStyleAfterMerge() {
-      const result = Danmaku.mergeStyle.get(this.repeatCount)
+      let result
+      for (let [i, classString] of Danmaku.mergeStyle) {
+        if (this.repeatCount < i) {
+          break
+        }
+        result = classString
+      }
       if (result) {
-        // fixme 可优化
         if (this.addedClass) this.el.removeClass(this.addedClass)
         this.el.addClass(result)
         this.addedClass = result
       }
+      if (String(this.repeatCount).length - String(this.repeatCount-1).length >= 1) {
+        this.generateRollStyle()
+      }
     }
 
+    generateRollStyle(){
+      const {size, color, opacity, speed} = Danmaku.globalStyle
+      this.width = this.msg.pxWidth(`${size}px SimHei`)
+      const totallyMove = Controller.boxWidth + this.width + 80
+      this.duration = totallyMove / speed
+      this.el.attr("style", `--size:${size}px;--color:${color};--opacity:${opacity};--top:${this.top}px;--duration:${this.duration}s;--translate:${-totallyMove}px`)
+    }
   }
 
   class Controller {
+    static boxWidth = 0
+    static boxHeight = 0
     constructor() {
       this.$box = $('<div class="chen-dm-box"></div>')
-      this.boxWidth = 0
-      this.boxHeight = 0
       this.readyToSend = []
       this.maxDelay = 5000
       this.danmakuUsingTop = []
-      this.featureMap = new Map()
+      this.featureMap = new Map() // key: "feature", value: dm
+      this.styleToUpdate = []
       this.mount()
-      this.openSendCircle(300)
+      this.openHandleCircle(300)
+      this.openDanmakuKiller(500)
       this.dev()
     }
 
     mount() {
-      // let intervalID = setInterval(() => {
-      //   console.log('check')
-      //   if (document.getElementById('live-player')) {
-      //     mount()
-      //     clearInterval(intervalID)
-      //     console.log('mounted')
-      //   }
-      // }, 1000)
       this.$box.prependTo('#live-player')
       $('#chat-items').on('DOMNodeInserted', (e) => {
         const msg = e.target.dataset.danmaku
@@ -159,8 +170,11 @@
 
       new ResizeObserver(entries => {
         entries.forEach(entry => {
-          this.boxWidth = entry.contentRect.width
-          this.boxHeight = entry.contentRect.height
+          Controller.boxWidth = entry.contentRect.width
+          Controller.boxHeight = entry.contentRect.height
+          for (let dm of this.featureMap.values()) {
+            dm.generateRollStyle(Controller.boxWidth)
+          }
         })
       }).observe(this.$box[0])
     }
@@ -172,16 +186,16 @@
     }
 
     mergeWhenRepeat(dm) {
-      const item = this.featureMap.get(dm.feature)
-      if (item) {
+      const target = this.featureMap.get(dm.feature)
+      if (target) {
         // fixme 有改进空间
-        const {target, timeStamp} = item
-        if (timeStamp < Date.now()) {
+        if (target.duration * 1000 + target.sendedTime < Date.now()) {
+          dm.el.remove()
           this.featureMap.delete(dm.feature)
           return false
         }
-        target.el.text(`${target.msg}₍${this.turnNumberToSubscript(++target.repeatCount)}₎`)
-        target.updateStyleAfterMerge()
+        target.repeatCount++
+        this.styleToUpdate.push(target)
         this.saveMergeHistory(dm.msg, target.msg)
         return true
       }
@@ -199,62 +213,32 @@
       })
     }
 
-    openSendCircle(time) {
+    openHandleCircle(time) {
       setInterval(() => {
         this.removeOvertimeMsgs()
         const tops = this.getFreeTops(this.readyToSend.length)
         const $fragment = $(document.createDocumentFragment())
         for (let top of tops) {
           const dm = this.readyToSend.shift()
-          if (!dm) {
-            break
-          }
-          if (this.mergeWhenRepeat(dm)) {
-            continue
-          }
-          const duration = dm.mount($fragment, this.boxWidth, top)
-          this.featureMap.set(dm.feature, {target: dm, timeStamp: Date.now() + duration * 1000})
+          if (!dm) break
+          if (this.mergeWhenRepeat(dm)) continue
+          dm.mount($fragment, top)
+          this.featureMap.set(dm.feature, dm)
           this.danmakuUsingTop.push({
             lower: top - 1,
             upper: top - 1 + Danmaku.lineHeight,
-            timeStamp: Date.now() + (dm.width + 15) / Danmaku.globalStyle.speed * 1000
+            timeStamp: Date.now() + (dm.width + 30) / Danmaku.globalStyle.speed * 1000
           })
-          this.destroyDanmaku(dm, duration)
         }
         $fragment.appendTo(this.$box)
-        if (tops.length > 0) {
-          this.danmakuUsingTop.sort((a, b) => a.lower - b.lower)
+
+        for (let dm of this.styleToUpdate) {
+          dm.el.text(`${dm.msg}₍${this.turnNumberToSubscript(dm.repeatCount)}₎`)
+          dm.updateStyleAfterMerge()
         }
+        this.styleToUpdate = []
+        if (tops.length > 0) this.danmakuUsingTop.sort((a, b) => a.lower - b.lower)
       }, time)
-    }
-
-    dev() {
-      setInterval(() => {
-        this.handleNewMsg('..赢！！')
-        // console.log(liveDanmakus)
-      }, 1000)
-      setInterval(() => {
-        this.handleNewMsg('赢')
-        // console.log(liveDanmakus)
-      }, 500)
-      // setInterval(() => {
-      //   this.handleNewMsg('测试')
-      // }, 20)
-      // setInterval(() => {
-      //   handleDanmaku('嘉然？')
-      //   // console.log(liveDanmakus)
-      // }, 700)
-
-      const $button1 = $('<button id="chen-getMergeHistory">打印</button>')
-      const $button2 = $('<button id="chen-clearMergeHistory">清除</button>')
-      $button1.click(() => {
-        getMergeHistory().then((value) => {
-          console.log(value)
-        })
-      })
-      $button1.prependTo('body')
-      $button2.click(clearMergeHistory)
-      $button2.prependTo('body')
     }
 
     turnNumberToSubscript(num) {
@@ -282,7 +266,7 @@
           top = upper
           i++
         } else {
-          if (top + height > this.boxHeight) {
+          if (top + height > Controller.boxHeight) {
             return result
           }
           result.push(top + 1)
@@ -290,7 +274,7 @@
         }
       }
       while (result.length < num) {
-        if (top + height > this.boxHeight) {
+        if (top + height > Controller.boxHeight) {
           return result
         }
         result.push(top + 1)
@@ -310,10 +294,41 @@
       this.readyToSend.splice(0, i)
     }
 
-    destroyDanmaku(dm, duration) {
-      setTimeout(() => {
-        dm.el.remove()
-      }, duration * 1000 + 100)
+    openDanmakuKiller(time) {
+      setInterval(() => {
+        for (let dm of this.featureMap.values()) {
+          if (dm.sendedTime + dm.duration * 1000 < Date.now()) {
+            dm.el.remove()
+            this.featureMap.delete(dm.feature)
+          }
+        }
+      }, time)
+    }
+
+    dev() {
+      // setInterval(() => {
+      //   this.handleNewMsg('合并')
+      // }, 50)
+      // setInterval(() => {
+      //   this.handleNewMsg('【赢】')
+      // }, 500)
+      // setInterval(() => {
+      //   this.handleNewMsg('测试')
+      // }, 20)
+      // setInterval(() => {
+      //   handleDanmaku('嘉然？')
+      // }, 700)
+
+      const $button1 = $('<button id="chen-getMergeHistory">打印</button>')
+      const $button2 = $('<button id="chen-clearMergeHistory">清除</button>')
+      $button1.click(() => {
+        getMergeHistory().then((value) => {
+          console.log(value)
+        })
+      })
+      $button1.prependTo('body')
+      $button2.click(clearMergeHistory)
+      $button2.prependTo('body')
     }
   }
 

@@ -56,6 +56,7 @@
   pointer-events: none;
   font-family: SimHei, 'Microsoft JhengHei', Arial, Helvetica, sans-serif;
   font-weight: var(--weight, bold);
+  will-change: transform;
   line-height: 1.2;
   padding: 0 calc(var(--size, 25px) * 0.4);
   font-size: var(--size, 25px);
@@ -63,17 +64,14 @@
   transition: color .3s linear ,background-color .3s linear;
   opacity: var(--opacity, 1);
   text-shadow: 1px 0 1px var(--shadowColor, #000000), 0 1px 1px var(--shadowColor, #000000), 0 -1px 1px var(--shadowColor, #000000), -1px 0 1px var(--shadowColor, #000000);
-  animation: chen-danmaku-roll var(--duration, 10s) linear;
+  animation: chen-danmaku-roll var(--duration, 10s) linear forwards;
 }
-
 @keyframes chen-danmaku-roll {
   from {
-    left: 100%;
     transform: translateX(0);
   }
   to {
-    left: -20px;
-    transform: translateX(-100%);
+    transform: translateX(var(--translate));
   }
 }
 
